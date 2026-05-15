@@ -1001,7 +1001,7 @@ async def test_external_camera(
 async def check_plate_empty(
     printer_id: int,
     plate_type: str | None = None,
-    use_external: bool = False,
+    use_external: bool | None = None,
     include_debug_image: bool = False,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
@@ -1016,7 +1016,11 @@ async def check_plate_empty(
     Args:
         printer_id: Printer ID
         plate_type: Type of build plate (e.g., "High Temp Plate") for calibration lookup
-        use_external: If True, prefer external camera over built-in
+        use_external: If True, prefer external camera over built-in. When omitted
+            (None), defaults to the printer's external_camera_enabled setting —
+            mirroring the runtime auto-check at print start (main.py). Without
+            this default the UI's manual check would always use the built-in
+            camera, mismatching the reference saved during calibration (#1359).
         include_debug_image: If True, return URL to annotated debug image
 
     Returns:
@@ -1036,6 +1040,11 @@ async def check_plate_empty(
 
     # Check printer exists first (before OpenCV check)
     printer = await get_printer_or_404(printer_id, db)
+
+    if use_external is None:
+        use_external = bool(
+            printer.external_camera_enabled and printer.external_camera_url and printer.external_camera_type
+        )
 
     if not is_plate_detection_available():
         raise HTTPException(
@@ -1111,7 +1120,7 @@ async def check_plate_empty(
 async def calibrate_plate_detection(
     printer_id: int,
     label: str | None = None,
-    use_external: bool = False,
+    use_external: bool | None = None,
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.CAMERA_VIEW),
 ):
@@ -1128,7 +1137,10 @@ async def calibrate_plate_detection(
     Args:
         printer_id: Printer ID
         label: Optional label for this reference (e.g., "High Temp Plate", "Wham Bam")
-        use_external: If True, prefer external camera over built-in
+        use_external: If True, prefer external camera over built-in. When omitted
+            (None), defaults to the printer's external_camera_enabled setting so
+            calibration captures from the same source the runtime auto-check
+            uses at print start (#1359).
 
     Returns:
         Dict with:
@@ -1144,6 +1156,11 @@ async def calibrate_plate_detection(
 
     # Check printer exists first (before OpenCV check)
     printer = await get_printer_or_404(printer_id, db)
+
+    if use_external is None:
+        use_external = bool(
+            printer.external_camera_enabled and printer.external_camera_url and printer.external_camera_type
+        )
 
     if not is_plate_detection_available():
         raise HTTPException(

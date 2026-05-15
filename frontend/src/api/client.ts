@@ -4914,7 +4914,12 @@ export const api = {
   // Plate Detection - Multi-reference calibration (stores up to 5 references per printer)
   checkPlateEmpty: (printerId: number, options?: { useExternal?: boolean; includeDebugImage?: boolean }) => {
     const params = new URLSearchParams();
-    params.set('use_external', String(options?.useExternal ?? false));
+    // Only forward use_external when the caller explicitly sets it. Omitted →
+    // backend derives the default from the printer's external_camera_enabled
+    // setting so calibration and runtime checks use the same camera (#1359).
+    if (options?.useExternal !== undefined) {
+      params.set('use_external', String(options.useExternal));
+    }
     params.set('include_debug_image', String(options?.includeDebugImage ?? false));
     return request<PlateDetectionResult>(
       `/printers/${printerId}/camera/check-plate?${params.toString()}`
@@ -4928,7 +4933,9 @@ export const api = {
   calibratePlateDetection: (printerId: number, options?: { label?: string; useExternal?: boolean }) => {
     const params = new URLSearchParams();
     if (options?.label) params.set('label', options.label);
-    params.set('use_external', String(options?.useExternal ?? false));
+    if (options?.useExternal !== undefined) {
+      params.set('use_external', String(options.useExternal));
+    }
     return request<CalibrationResult & { index: number }>(
       `/printers/${printerId}/camera/plate-detection/calibrate?${params.toString()}`,
       { method: 'POST' }
