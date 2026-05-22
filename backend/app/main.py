@@ -5457,6 +5457,16 @@ if app_settings.static_dir.exists() and any(app_settings.static_dir.iterdir()):
             StaticFiles(directory=app_settings.static_dir / "icons"),
             name="icons",
         )
+    # Self-hosted Inter woff2 files (#1460). Without this mount /fonts/*.woff2
+    # falls through to the SPA catch-all and returns index.html, which the
+    # browser's font sanitizer rejects ("downloadable font: rejected by
+    # sanitizer").
+    if (app_settings.static_dir / "fonts").exists():
+        app.mount(
+            "/fonts",
+            StaticFiles(directory=app_settings.static_dir / "fonts"),
+            name="fonts",
+        )
 
 
 @app.get("/")
