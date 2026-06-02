@@ -988,6 +988,8 @@ export interface APIKey {
   can_queue: boolean;
   can_control_printer: boolean;
   can_read_status: boolean;
+  can_manage_library: boolean;
+  can_manage_inventory: boolean;
   can_access_cloud: boolean;
   can_update_energy_cost: boolean;
   printer_ids: number[] | null;
@@ -1002,6 +1004,8 @@ export interface APIKeyCreate {
   can_queue?: boolean;
   can_control_printer?: boolean;
   can_read_status?: boolean;
+  can_manage_library?: boolean;
+  can_manage_inventory?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
@@ -1017,6 +1021,8 @@ export interface APIKeyUpdate {
   can_queue?: boolean;
   can_control_printer?: boolean;
   can_read_status?: boolean;
+  can_manage_library?: boolean;
+  can_manage_inventory?: boolean;
   can_access_cloud?: boolean;
   can_update_energy_cost?: boolean;
   printer_ids?: number[] | null;
