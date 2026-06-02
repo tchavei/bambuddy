@@ -1833,6 +1833,23 @@ async def run_migrations(conn):
             {"old": old_val, "new": new_val},
         )
 
+    # Migration: Unify `LibraryFile.file_type` across ingest paths (#1600).
+    # Pre-#1600, only the external-folder scan path stored `gcode.3mf` for
+    # sliced outputs — the upload, ZIP-extract, and in-process paths all
+    # stripped to the trailing `.3mf` and stored `3mf`, so the same file
+    # family was split between two values depending on how it was ingested.
+    # Going forward `classify_file_type()` is canonical; this backfill flips
+    # existing legacy `3mf` rows whose filename ends in `.gcode.3mf` to the
+    # canonical compound name. Idempotent (post-update rows no longer match
+    # `file_type = '3mf'`) and dialect-neutral (`LOWER` + `LIKE` work the
+    # same under SQLite and Postgres).
+    await conn.execute(
+        text(
+            "UPDATE library_files SET file_type = 'gcode.3mf' "
+            "WHERE file_type = '3mf' AND LOWER(filename) LIKE '%.gcode.3mf'"
+        )
+    )
+
     # Migration: Add per-user Bambu Cloud credential columns
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_token VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_email VARCHAR(255)")

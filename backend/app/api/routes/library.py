@@ -91,6 +91,26 @@ def get_library_files_dir() -> Path:
     return files_dir
 
 
+def classify_file_type(filename: str) -> str:
+    """Return the canonical ``LibraryFile.file_type`` for *filename*.
+
+    Compound extensions are preserved — a `.gcode.3mf` file (a sliced
+    output, still a 3MF zip on disk) is classified ``gcode.3mf`` rather
+    than ``3mf``. Pre-#1600 this was only done in the external-scan
+    path; the upload / ZIP-extract / in-process paths all stripped to
+    the trailing extension and stored ``3mf``, so the FE had to accept
+    both. Unified here so every ingest path stores the same value and
+    downstream gates (gcode download, file-type filter, thumbnail
+    extraction) only need to handle one canonical name per file family.
+    Files with no extension classify as ``unknown``.
+    """
+    lower = filename.lower()
+    if lower.endswith(".gcode.3mf"):
+        return "gcode.3mf"
+    ext = os.path.splitext(lower)[1]
+    return ext[1:] if ext else "unknown"
+
+
 def get_library_thumbnails_dir() -> Path:
     """Get the directory for library thumbnails."""
     thumbnails_dir = get_library_dir() / "thumbnails"
@@ -468,7 +488,7 @@ async def save_3mf_bytes_to_library(
         folder_id=folder_id,
         filename=filename,
         file_path=to_relative_path(file_path),
-        file_type=ext[1:] if ext else "unknown",
+        file_type=classify_file_type(filename),
         file_size=len(file_bytes),
         file_hash=file_hash,
         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
@@ -1454,17 +1474,16 @@ async def scan_external_folder(
             except OSError:
                 continue
 
-            file_type = ext[1:] if ext else "unknown"
-            # For compound extensions, use the meaningful part
-            if file_type in ("3mf",) and len(filepath.suffixes) >= 2:
-                inner = filepath.suffixes[-2].lower()
-                if inner == ".gcode":
-                    file_type = "gcode.3mf"
+            file_type = classify_file_type(filename)
 
-            # Extract thumbnail for 3mf files
+            # Extract thumbnail for 3mf files (including .gcode.3mf sliced
+            # outputs — those are 3MF zips on disk and carry the same
+            # thumbnail Metadata/plate_1.png the parser reads). Pre-#1600
+            # the gate was `file_type == "3mf"` alone, so .gcode.3mf files
+            # in external folders silently got no thumbnail.
             thumbnail_path = None
             file_metadata = None
-            if file_type == "3mf":
+            if file_type in ("3mf", "gcode.3mf"):
                 try:
                     parser = ThreeMFParser(str(filepath))
                     raw_metadata = parser.parse()
@@ -1700,8 +1719,11 @@ async def upload_file(
         except InvalidFilenameError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         ext = os.path.splitext(filename)[1].lower()
-        # Handle files without extension
-        file_type = ext[1:] if ext else "unknown"
+        # `file_type` is compound-aware (`gcode.3mf` for sliced outputs).
+        # `ext` stays the trailing extension because the on-disk filename
+        # uses it directly and the 3MF-parse branch below still gates on
+        # `ext == ".3mf"`, which is correct for both `.3mf` and `.gcode.3mf`.
+        file_type = classify_file_type(filename)
 
         # Verify folder exists if specified
         target_folder = None
@@ -1995,7 +2017,7 @@ async def extract_zip_file(
                     # Extract file
                     filename = os.path.basename(zip_path)
                     ext = os.path.splitext(filename)[1].lower()
-                    file_type = ext[1:] if ext else "unknown"
+                    file_type = classify_file_type(filename)
 
                     # Generate unique filename for storage
                     unique_filename = f"{uuid.uuid4().hex}{ext}"
@@ -4387,8 +4409,10 @@ async def get_gcode(
 
     if file.file_type == "gcode":
         return FastAPIFileResponse(str(abs_path), media_type="text/plain")
-    elif file.file_type == "3mf":
-        # Extract gcode from 3mf
+    elif file.file_type in ("3mf", "gcode.3mf"):
+        # Extract gcode from 3mf zip container. `.gcode.3mf` sliced outputs
+        # carry the same `Metadata/plate_*.gcode` entries as a `.3mf`, so
+        # the unzip path is identical — just had to expand the gate.
         try:
             with zipfile.ZipFile(str(abs_path), "r") as zf:
                 # Find gcode file
