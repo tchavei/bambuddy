@@ -513,6 +513,10 @@ class ColorLookupResult(BaseModel):
     material: str | None = None
 
 
+class ColorByMaterialResult(BaseModel):
+    color_name: str | None = None
+
+
 # ── Spool Catalog CRUD ─────────────────────────────────────────────────────
 
 
@@ -788,6 +792,73 @@ async def lookup_color(
     if row:
         return ColorLookupResult(found=True, hex_color=row.hex_color, material=row.material)
     return ColorLookupResult(found=False)
+
+
+@router.get("/colors/by-material", response_model=ColorByMaterialResult)
+async def get_color_by_material(
+    hex: str,
+    material: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = Depends(require_auth_if_enabled),
+):
+    """Disambiguated hex→name lookup that respects material context.
+
+    ``/colors/map`` collapses every catalog entry sharing a hex to a single
+    name with "Bambu Lab > is_default > first" priority — that loses, e.g.,
+    "PLA Matte Charcoal" (#000000) behind "PLA Basic Black" (also #000000).
+    This endpoint preserves the material context so the queue scheduler's
+    Filament Override label can show the actually-sliced sub-brand colour
+    instead of the generic bucket. #1718.
+
+    Returns ``color_name=None`` when the hex isn't in the catalog at all.
+    When the hex IS in the catalog but no entry matches the requested
+    material (or none was supplied), falls back to the same priority order
+    as ``/colors/map`` so callers without a material hint don't regress.
+
+    Not gated on INVENTORY_READ for the same reason ``/colors/map`` isn't —
+    every queue / archive view that renders a sliced filament colour needs
+    this, including read-only roles.
+    """
+    key = hex.lstrip("#").lower()[:6]
+    if len(key) != 6:
+        return ColorByMaterialResult(color_name=None)
+
+    material_norm = (material or "").strip().lower()
+
+    # Catalog rows are stored as ``#RRGGBB`` (verified at write time and
+    # against production); lookup uses lower-cased hex equality so mixed-case
+    # writes from older imports still match.
+    result = await db.execute(
+        select(
+            ColorCatalogEntry.color_name,
+            ColorCatalogEntry.manufacturer,
+            ColorCatalogEntry.material,
+            ColorCatalogEntry.is_default,
+        ).where(func.lower(ColorCatalogEntry.hex_color) == f"#{key}")
+    )
+    candidates = [(name, mfg, mat, is_default) for name, mfg, mat, is_default in result.all() if name]
+    if not candidates:
+        return ColorByMaterialResult(color_name=None)
+
+    if material_norm:
+        for name, _mfg, mat, _is_default in candidates:
+            if mat and mat.strip().lower() == material_norm:
+                return ColorByMaterialResult(color_name=name)
+
+    # Same priority order as ``/colors/map`` so a caller passing no (or an
+    # unrecognised) material gets the existing answer, not a degraded one.
+    best_name: str | None = None
+    best_priority = -1
+    for name, mfg, _mat, is_default in candidates:
+        priority = 0
+        if mfg and mfg.strip().lower() == "bambu lab":
+            priority += 2
+        if is_default:
+            priority += 1
+        if priority > best_priority:
+            best_name = name
+            best_priority = priority
+    return ColorByMaterialResult(color_name=best_name)
 
 
 @router.get("/colors/search", response_model=list[ColorEntryResponse])

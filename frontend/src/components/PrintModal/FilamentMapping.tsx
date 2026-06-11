@@ -6,6 +6,7 @@ import { api } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { getGlobalTrayId } from '../../utils/amsHelpers';
 import { getColorName } from '../../utils/colors';
+import { useFilamentLabels } from './useFilamentLabels';
 import type { FilamentMappingProps } from './types';
 
 /**
@@ -43,6 +44,13 @@ export function FilamentMapping({
 
   const { loadedFilaments, filamentComparison, hasTypeMismatch, hasColorMismatch } =
     useFilamentMapping(filamentReqs, printerStatus, manualMappings);
+
+  // Per-slot sub-brand + material-disambiguated colour labels (#1718). Same
+  // shared hook the model-mode FilamentOverride uses so both panels render
+  // the same sliced-3MF identity. Falls back to the raw type / generic
+  // colour bucket when the SKU is unknown or the by-material lookup hasn't
+  // resolved — never blanks out the required row.
+  const filamentLabels = useFilamentLabels(filamentReqs?.filaments);
 
   const trayCostMap = useMemo(() => {
     const map = new Map<number, number | null>();
@@ -192,6 +200,11 @@ export function FilamentMapping({
             // scheduler honors the flag in both modes; only the UI was missing.
             const slotId = item.slot_id ?? 0;
             const canForceMatch = slotId > 0 && onForceColorMatchChange != null;
+            // #1718: same sub-brand + colour resolution as FilamentOverride.
+            // Indexing is safe because ``useFilamentLabels`` mirrors the input
+            // array shape; defensive fallback covers the empty-reqs render
+            // path that shouldn't reach here anyway.
+            const { resolvedName, colorLabel } = filamentLabels[idx] ?? { resolvedName: item.type, colorLabel: getColorName(item.color) };
             return (
             <div key={idx} className="space-y-1">
               <div
@@ -199,7 +212,7 @@ export function FilamentMapping({
                 style={{ gridTemplateColumns: '16px minmax(70px, 1fr) auto 2fr 16px' }}
               >
                 {/* Required color */}
-                <span title={`Required: ${item.type} - ${getColorName(item.color)}`}>
+                <span title={`Required: ${resolvedName} - ${colorLabel}`}>
                   <Circle className="w-3 h-3" fill={item.color} stroke={item.color} />
                 </span>
                 {/* Required type + grams + nozzle badge */}
@@ -212,7 +225,7 @@ export function FilamentMapping({
                       {item.nozzle_id === 1 ? t('printModal.leftNozzle') : t('printModal.rightNozzle')}
                     </span>
                   )}
-                  {item.type} <span className="text-bambu-gray">({item.used_grams}g)</span>
+                  {resolvedName} <span className="text-bambu-gray">({item.used_grams}g)</span>
                 </span>
                 {/* Arrow */}
                 <span className="text-bambu-gray">→</span>

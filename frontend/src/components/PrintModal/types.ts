@@ -183,6 +183,10 @@ export interface FilamentReqsData {
     used_grams: number;
     used_meters: number;
     nozzle_id?: number;
+    /** Bambu SKU code from the 3MF (e.g. `GFA01` = Bambu PLA Matte, `P4d64437`
+     *  = user custom). Used to resolve the "original" filament label in
+     *  FilamentOverride against the builtin + cloud user-preset maps. #1718. */
+    tray_info_idx?: string;
   }>;
 }
 
