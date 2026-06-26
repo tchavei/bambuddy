@@ -5300,13 +5300,15 @@ function PrinterCard({
                               const emptyKind = getEmptySlotKind(extTray);
                               const extSlotContent = (
                                 <div className={`w-full bg-bambu-dark-secondary rounded-lg p-1 text-center ${isEmpty ? 'opacity-50' : ''} ${isExtActive ? 'ring-2 ring-bambu-green ring-offset-1 ring-offset-bambu-dark' : ''}`}>
-                                  {/* Filament color circle with 1-based slot number centered inside */}
+                                  {/* Color circle: L/R inside on dual-nozzle external (replaces
+                                      the separate Ext-L/Ext-R caption that made the row taller than
+                                      regular AMS slots), 1-based slot number on single-nozzle. */}
                                   <FilamentSlotCircle
                                     trayColor={extTray.tray_color}
                                     trayType={extTray.tray_type}
                                     isEmpty={isEmpty}
                                     emptyKind={emptyKind}
-                                    slotNumber={slotTrayId + 1}
+                                    slotNumber={isDualNozzle ? (extTrayId === 254 ? 'L' : 'R') : slotTrayId + 1}
                                   />
                                   <div className={`text-[9px] font-bold truncate ${isEmpty ? 'text-white/40' : 'text-white'}`}>
                                     {extTray.tray_type || t('ams.slotEmpty')}
@@ -5322,7 +5324,6 @@ function PrinterCard({
                                       />
                                     )}
                                   </div>
-                                  {extLabel && <div className="text-[7px] text-white/40 mt-0.5 truncate">{extLabel}</div>}
                                 </div>
                               );
 
@@ -5484,7 +5485,7 @@ function PrinterCard({
         {viewMode === 'expanded' && (
           <div className="mt-auto">
         {smartPlug && (
-          <div className="pt-4">
+          <div className="pt-3">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
                 {t('printers.power', 'Power')}
